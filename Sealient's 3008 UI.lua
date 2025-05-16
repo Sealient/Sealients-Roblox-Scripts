@@ -195,7 +195,7 @@ fpsLabel.TextXAlignment = Enum.TextXAlignment.Left
 fpsLabel.Text = "FPS: ..."
 fpsLabel.Parent = frame
 
-local CurrentVersion = "1.2.0" -- your current version
+_G.Sealient_UI_Version = "v1.2.0"-- your current version
 
 -- FPS Calculation
 local lastTime = tick()
@@ -204,82 +204,108 @@ RunService.RenderStepped:Connect(function()
 	frames += 1
 	local currentTime = tick()
 	if currentTime - lastTime >= 1 then
-		fpsLabel.Text = string.format("FPS: %d   Version: %s", frames, tostring(CurrentVersion or "Unknown"))
+		fpsLabel.Text = string.format("FPS: %d   Version: %s", frames, tostring(_G.Sealient_UI_Version or "Unknown"))
 		frames = 0
 		lastTime = currentTime
 	end
 end)
 
-local function cleanupOldUI()
-    -- Disconnect ESP connections
-    for item, conn in pairs(itemRenderConnections or {}) do
-        if conn.Disconnect then conn:Disconnect() end
-    end
-    itemRenderConnections = {}
-    
-    -- Destroy ESP GUI instances
-    for item, gui in pairs(itemESPInstances or {}) do
-        if gui and gui.Destroy then gui:Destroy() end
-    end
-    itemESPInstances = {}
-
-    -- Destroy coordinate display
-    local coordGui = game:GetService("CoreGui"):FindFirstChild("CoordDisplay")
-    if coordGui then coordGui:Destroy() end
-
-    -- Destroy FPS counter UI
-    local fpsGui = game:GetService("CoreGui"):FindFirstChild("SealientFPSDisplay")
-    if fpsGui then fpsGui:Destroy() end
-
-    -- Destroy Fluent UI Window
-    if Window and Window.Close then
-        Window:Close()
-    end
-
-    -- Optionally reset references
-    Window = nil
-end
 
 
 Tabs.Settings:AddButton({
     Title = "Check Version",
-    Description = "Check for updates and apply them.",
+    Description = "Check for new updates",
     Callback = function()
-        task.spawn(function()
-            local versionUrl = "https://raw.githubusercontent.com/Sealient/Sealients-Roblox-Scripts/refs/heads/main/Sealient%27s%203008%20UI%20Version.lua"
-            local scriptUrl = "https://raw.githubusercontent.com/Sealient/Sealients-Roblox-Scripts/refs/heads/main/Sealient%27s%203008%20UI.lua"
+        local currentVersion = _G.Sealient_UI_Version or "Unknown"
 
-            local success, result = pcall(function()
-                return game:HttpGet(versionUrl)
-            end)
-
-            if success then
-                local remoteVersion = result:match("[^\r\n]+")
-                if remoteVersion and remoteVersion ~= CurrentVersion then
-                    cleanupOldUI() -- cleanup before update
-
-                    local _, scriptSource = pcall(function()
-                        return game:HttpGet(scriptUrl)
-                    end)
-
-                    if scriptSource then
-                        loadstring(scriptSource)()
-                    else
-                        warn("Failed to load updated script.")
-                    end
-                else
-                    Window:Dialog({
-                        Title = "No Update",
-                        Content = "You are on the latest version.",
-                        Buttons = {{ Title = "OK" }}
-                    })
-                end
-            else
-                warn("Failed to check version:", result)
-            end
+        local success, latestVersion = pcall(function()
+            return game:HttpGet("https://raw.githubusercontent.com/Sealient/Sealients-Roblox-Scripts/refs/heads/main/Sealient's%203008%20UI%20Version.lua")
         end)
+
+        if not success or not latestVersion then
+            Window:Dialog({
+                Title = "Error",
+                Content = "Failed to check version from server.",
+                Buttons = {{ Title = "OK", Callback = function() end }}
+            })
+            return
+        end
+
+        latestVersion = latestVersion:match("^%s*(.-)%s*$") -- Trim whitespace
+
+        if latestVersion == currentVersion then
+            Window:Dialog({
+                Title = "Up to Date",
+                Content = "You are already on the latest version.",
+                Buttons = {{ Title = "OK", Callback = function() end }}
+            })
+            return
+        end
+
+        -- Ask user to confirm update
+        Window:Dialog({
+            Title = "Update Available",
+            Content = string.format("Current: %s\nLatest: %s\nUpdate now?", currentVersion, latestVersion),
+            Buttons = {
+                {
+                    Title = "Update",
+                    Callback = function()
+                        -- Remove Item ESPs
+                        if itemESPInstances then
+                            for item, esp in pairs(itemESPInstances) do
+                                if typeof(esp) == "Instance" and esp:IsA("GuiBase") then
+                                    esp:Destroy()
+                                end
+                            end
+                            itemESPInstances = {}
+                        end
+
+                        -- Disconnect render connections
+                        if itemRenderConnections then
+                            for _, conn in pairs(itemRenderConnections) do
+                                if typeof(conn) == "RBXScriptConnection" then
+                                    conn:Disconnect()
+                                end
+                            end
+                            itemRenderConnections = {}
+                        end
+
+                        -- Remove top right FPS/version display
+                        local topUI = game:GetService("CoreGui"):FindFirstChild("SealientUI_Info")
+                        if topUI then
+                            topUI:Destroy()
+                        end
+
+                        -- Remove bottom left coordinates UI
+                        local coordGui = game:GetService("CoreGui"):FindFirstChild("CoordDisplay")
+                        if coordGui then
+                            coordGui:Destroy()
+                        end
+
+                        -- Destroy Fluent UI window
+                        if Window and typeof(Window.Destroy) == "function" then
+                            Window:Destroy()
+                        end
+
+                        -- Load new version
+                        local loadSuccess, loadErr = pcall(function()
+                            loadstring(game:HttpGet("https://raw.githubusercontent.com/Sealient/Sealients-Roblox-Scripts/refs/heads/main/Sealient's%203008%20UI.lua"))()
+                        end)
+
+                        if not loadSuccess then
+                            warn("Failed to load updated script:", loadErr)
+                        end
+                    end
+                },
+                {
+                    Title = "Cancel",
+                    Callback = function() end
+                }
+            }
+        })
     end
 })
+
 
 
 
