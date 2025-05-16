@@ -210,90 +210,77 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
-Tabs.Settings:AddButton({
-    Title = "Check for Updates",
-    Description = "Checks for latest version and updates",
-    Callback = function()
-        local versionUrl = "https://raw.githubusercontent.com/Sealient/Sealients-Roblox-Scripts/refs/heads/main/Sealient's%203008%20UI%20Version.lua"
-        local scriptUrl = "https://raw.githubusercontent.com/Sealient/Sealients-Roblox-Scripts/refs/heads/main/Sealient's%203008%20UI.lua"
+local function cleanupOldUI()
+    -- Disconnect ESP connections
+    for item, conn in pairs(itemRenderConnections or {}) do
+        if conn.Disconnect then conn:Disconnect() end
+    end
+    itemRenderConnections = {}
+    
+    -- Destroy ESP GUI instances
+    for item, gui in pairs(itemESPInstances or {}) do
+        if gui and gui.Destroy then gui:Destroy() end
+    end
+    itemESPInstances = {}
 
+    -- Destroy coordinate display
+    local coordGui = game:GetService("CoreGui"):FindFirstChild("CoordDisplay")
+    if coordGui then coordGui:Destroy() end
+
+    -- Destroy FPS counter UI
+    local fpsGui = game:GetService("CoreGui"):FindFirstChild("SealientFPSDisplay")
+    if fpsGui then fpsGui:Destroy() end
+
+    -- Destroy Fluent UI Window
+    if Window and Window.Close then
+        Window:Close()
+    end
+
+    -- Optionally reset references
+    Window = nil
+end
+
+
+Tabs.Settings:AddButton({
+    Title = "Check Version",
+    Description = "Check for updates and apply them.",
+    Callback = function()
         task.spawn(function()
-            local success, newVersion = pcall(function()
+            local versionUrl = "https://raw.githubusercontent.com/Sealient/Sealients-Roblox-Scripts/refs/heads/main/Sealient%27s%203008%20UI%20Version.lua"
+            local scriptUrl = "https://raw.githubusercontent.com/Sealient/Sealients-Roblox-Scripts/refs/heads/main/Sealient%27s%203008%20UI.lua"
+
+            local success, result = pcall(function()
                 return game:HttpGet(versionUrl)
             end)
 
-            if not success then
-                warn("Failed to check version.")
-                return
-            end
+            if success then
+                local remoteVersion = result:match("[^\r\n]+")
+                if remoteVersion and remoteVersion ~= CurrentVersion then
+                    cleanupOldUI() -- cleanup before update
 
-            newVersion = newVersion:match("%S+") -- trim whitespace
+                    local _, scriptSource = pcall(function()
+                        return game:HttpGet(scriptUrl)
+                    end)
 
-            if newVersion and newVersion ~= CurrentVersion then
-                warn("New version found: " .. newVersion .. ". Updating...")
-
-                -- Cleanup existing UI
-                if gethui then
-                    for _, v in pairs(gethui():GetChildren()) do
-                        if v:IsA("ScreenGui") and v.Name:match("3008") then
-                            v:Destroy()
-                        end
+                    if scriptSource then
+                        loadstring(scriptSource)()
+                    else
+                        warn("Failed to load updated script.")
                     end
                 else
-                    for _, v in pairs(game:GetService("CoreGui"):GetChildren()) do
-                        if v:IsA("ScreenGui") and v.Name:match("3008") then
-                            v:Destroy()
-                        end
-                    end
-                end
-
-                -- Remove any global ESP connections
-                if itemRenderConnections then
-                    for _, conn in pairs(itemRenderConnections) do
-                        conn:Disconnect()
-                    end
-                    itemRenderConnections = {}
-                end
-                if employeeRenderConnections then
-                    for _, conn in pairs(employeeRenderConnections) do
-                        conn:Disconnect()
-                    end
-                    employeeRenderConnections = {}
-                end
-
-                -- Clear ESP instances
-                if itemESPInstances then
-                    for _, v in pairs(itemESPInstances) do
-                        if typeof(v) == "Instance" then
-                            v:Destroy()
-                        end
-                    end
-                    itemESPInstances = {}
-                end
-                if employeeESPInstances then
-                    for _, v in pairs(employeeESPInstances) do
-                        if typeof(v) == "Instance" then
-                            v:Destroy()
-                        end
-                    end
-                    employeeESPInstances = {}
-                end
-
-                -- Load new version
-                local success, result = pcall(function()
-                    return loadstring(game:HttpGet(scriptUrl))()
-                end)
-                if success then
-                    print("Update complete.")
-                else
-                    warn("Update failed:", result)
+                    Window:Dialog({
+                        Title = "No Update",
+                        Content = "You are on the latest version.",
+                        Buttons = {{ Title = "OK" }}
+                    })
                 end
             else
-                print("Already on the latest version:", CurrentVersion)
+                warn("Failed to check version:", result)
             end
         end)
     end
 })
+
 
 
 -- Coordinate UI (on-screen display)
