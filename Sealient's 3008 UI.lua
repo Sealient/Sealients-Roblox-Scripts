@@ -6,6 +6,7 @@ local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.
 -- Required Services
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 local StarterGui = game:GetService("StarterGui")
 local Camera = workspace.CurrentCamera
@@ -194,7 +195,7 @@ fpsLabel.TextXAlignment = Enum.TextXAlignment.Left
 fpsLabel.Text = "FPS: ..."
 fpsLabel.Parent = frame
 
-local version = "v1.2.0" -- Update this string as needed
+local CurrentVersion = "1.2.0" -- your current version
 
 -- FPS Calculation
 local lastTime = tick()
@@ -203,47 +204,95 @@ RunService.RenderStepped:Connect(function()
 	frames += 1
 	local currentTime = tick()
 	if currentTime - lastTime >= 1 then
-		fpsLabel.Text = string.format("FPS: %d   %s", frames, version)
+		fpsLabel.Text = string.format("FPS: %d   Version: %s", frames, tostring(CurrentVersion or "Unknown"))
 		frames = 0
 		lastTime = currentTime
 	end
 end)
 
--- Settings tab - Check Version
 Tabs.Settings:AddButton({
-	Title = "Check Version",
-	Description = "Check for new updates",
-	Callback = function()
-		local success, latestVersion = pcall(function()
-			return game:HttpGet("https://raw.githubusercontent.com/Sealient/Sealients-Roblox-Scripts/refs/heads/main/Sealient's%203008%20UI%20Version.lua")
-		end)
-		if success and latestVersion and latestVersion ~= version then
-			Window:Dialog({
-				Title = "Update Available",
-				Content = string.format("Current version: %s\nNew version: %s\nUpdate now?", version, latestVersion),
-				Buttons = {
-					{
-						Title = "Update",
-						Callback = function()
-							loadstring(game:HttpGet("https://raw.githubusercontent.com/Sealient/Sealients-Roblox-Scripts/refs/heads/main/Sealient's%203008%20UI.lua"))()
-						end
-					},
-					{
-						Title = "Cancel",
-						Callback = function() end
-					}
-				}
-			})
-		else
-			Window:Dialog({
-				Title = "Up to Date",
-				Content = "You are already using the latest version.",
-				Buttons = {
-					{ Title = "OK", Callback = function() end }
-				}
-			})
-		end
-	end
+    Title = "Check for Updates",
+    Description = "Checks for latest version and updates",
+    Callback = function()
+        local versionUrl = "https://raw.githubusercontent.com/Sealient/Sealients-Roblox-Scripts/refs/heads/main/Sealient's%203008%20UI%20Version.lua"
+        local scriptUrl = "https://raw.githubusercontent.com/Sealient/Sealients-Roblox-Scripts/refs/heads/main/Sealient's%203008%20UI.lua"
+
+        task.spawn(function()
+            local success, newVersion = pcall(function()
+                return game:HttpGet(versionUrl)
+            end)
+
+            if not success then
+                warn("Failed to check version.")
+                return
+            end
+
+            newVersion = newVersion:match("%S+") -- trim whitespace
+
+            if newVersion and newVersion ~= CurrentVersion then
+                warn("New version found: " .. newVersion .. ". Updating...")
+
+                -- Cleanup existing UI
+                if gethui then
+                    for _, v in pairs(gethui():GetChildren()) do
+                        if v:IsA("ScreenGui") and v.Name:match("3008") then
+                            v:Destroy()
+                        end
+                    end
+                else
+                    for _, v in pairs(game:GetService("CoreGui"):GetChildren()) do
+                        if v:IsA("ScreenGui") and v.Name:match("3008") then
+                            v:Destroy()
+                        end
+                    end
+                end
+
+                -- Remove any global ESP connections
+                if itemRenderConnections then
+                    for _, conn in pairs(itemRenderConnections) do
+                        conn:Disconnect()
+                    end
+                    itemRenderConnections = {}
+                end
+                if employeeRenderConnections then
+                    for _, conn in pairs(employeeRenderConnections) do
+                        conn:Disconnect()
+                    end
+                    employeeRenderConnections = {}
+                end
+
+                -- Clear ESP instances
+                if itemESPInstances then
+                    for _, v in pairs(itemESPInstances) do
+                        if typeof(v) == "Instance" then
+                            v:Destroy()
+                        end
+                    end
+                    itemESPInstances = {}
+                end
+                if employeeESPInstances then
+                    for _, v in pairs(employeeESPInstances) do
+                        if typeof(v) == "Instance" then
+                            v:Destroy()
+                        end
+                    end
+                    employeeESPInstances = {}
+                end
+
+                -- Load new version
+                local success, result = pcall(function()
+                    return loadstring(game:HttpGet(scriptUrl))()
+                end)
+                if success then
+                    print("Update complete.")
+                else
+                    warn("Update failed:", result)
+                end
+            else
+                print("Already on the latest version:", CurrentVersion)
+            end
+        end)
+    end
 })
 
 
