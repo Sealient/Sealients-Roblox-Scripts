@@ -1,6 +1,15 @@
-﻿local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
 local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
+local currentVersion = "1.0.0"  -- Your current script version
+local updateUrl = "https://raw.githubusercontent.com/yourusername/yourrepo/main/yourScript.lua" -- Replace with your raw script URL
+local versionUrl = "https://raw.githubusercontent.com/yourusername/yourrepo/main/version.txt" -- URL pointing to a small file containing just the version string
+_G.PiggyUI_Version = "v1.0.0"
+_G.PiggyUI_Version = _G.PiggyUI_Version or "Broken Version, Might Not Be The Creators Version."
 
 local Window = Fluent:CreateWindow({
     Title = "Fluent UI Script",
@@ -19,7 +28,64 @@ local Tabs = {
     Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
 
+-- Create the info GUI
+local infoGui = Instance.new("ScreenGui")
+infoGui.Name = "PiggyUI_Info"
+infoGui.ResetOnSpawn = false
+infoGui.IgnoreGuiInset = true
+infoGui.Parent = CoreGui
 
+-- Create the frame
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 220, 0, 60)
+frame.Position = UDim2.new(1, -230, 0, 10)
+frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+frame.BackgroundTransparency = 0.5
+frame.BorderSizePixel = 1
+frame.BorderColor3 = Color3.fromRGB(0, 255, 0)
+frame.Parent = infoGui
+
+-- Title label
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -10, 0, 25)
+title.Position = UDim2.new(0, 5, 0, 0)
+title.BackgroundTransparency = 1
+title.TextColor3 = Color3.fromRGB(0, 255, 0)
+title.TextStrokeTransparency = 0.7
+title.Font = Enum.Font.SourceSansBold
+title.TextSize = 18
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Text = "Sealient's Piggy UI"
+title.Parent = frame
+
+-- FPS + Version label
+local fpsLabel = Instance.new("TextLabel")
+fpsLabel.Size = UDim2.new(1, -10, 0, 20)
+fpsLabel.Position = UDim2.new(0, 5, 0, 25)
+fpsLabel.BackgroundTransparency = 1
+fpsLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+fpsLabel.TextStrokeTransparency = 0.7
+fpsLabel.Font = Enum.Font.SourceSansItalic
+fpsLabel.TextSize = 14
+fpsLabel.TextXAlignment = Enum.TextXAlignment.Left
+fpsLabel.Text = "FPS: ... | Version: " .. tostring(_G.PiggyUI_Version)
+fpsLabel.Parent = frame
+
+-- FPS updater coroutine
+task.spawn(function()
+    local lastTime = tick()
+    local frameCount = 0
+    while true do
+        frameCount += 1
+        local currentTime = tick()
+        if currentTime - lastTime >= 1 then
+            fpsLabel.Text = "FPS: " .. tostring(frameCount) .. " | Version: " .. tostring(_G.PiggyUI_Version)
+            frameCount = 0
+            lastTime = currentTime
+        end
+        RunService.RenderStepped:Wait()
+    end
+end)
 
 --==Visuals Tab=--
 
@@ -522,11 +588,47 @@ Tabs.Visual:AddSlider("ZoomSlider", {
 	LocalPlayer.CameraMaxZoomDistance = value
 end)
 
---==Items Tab=--
 
+--==Items Tab=--
 local selectedItem = nil
 local originalPosition = nil
+local itemDropdown = nil -- store the dropdown reference here
+local TweenService = game:GetService("TweenService")
 
+local function playTeleportEffect(position)
+    -- Create a purple sphere
+    local effectPart = Instance.new("Part")
+    effectPart.Size = Vector3.new(2, 2, 2)
+    effectPart.Shape = Enum.PartType.Ball
+    effectPart.Anchored = true
+    effectPart.CanCollide = false
+    effectPart.Material = Enum.Material.Neon
+    effectPart.Color = Color3.fromRGB(170, 0, 255)
+    effectPart.Position = position
+    effectPart.Transparency = 0.5
+    effectPart.Parent = workspace
+
+    -- Tween it to grow and fade out
+    local growTween = TweenService:Create(effectPart, TweenInfo.new(0.5), {
+        Size = Vector3.new(6, 6, 6),
+        Transparency = 1
+    })
+    growTween:Play()
+
+    -- Cleanup after
+    growTween.Completed:Connect(function()
+        effectPart:Destroy()
+    end)
+end
+
+local function getRoot()
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        return LocalPlayer.Character.HumanoidRootPart
+    end
+    return nil
+end
+
+-- Item folder getter
 local function getItemsFolder()
     if workspace:FindFirstChild("ItemFolder") then
         return workspace.ItemFolder
@@ -539,24 +641,28 @@ local function getItemsFolder()
     return nil
 end
 
--- Helper to update dropdown values
+-- Refresh the dropdown values
 local function refreshItemDropdown()
     local itemsFolder = getItemsFolder()
-    if not itemsFolder then return end
+    if not itemsFolder then
+        warn("No item folder found")
+        return
+    end
 
     local itemNames = {}
     for _, item in pairs(itemsFolder:GetChildren()) do
         table.insert(itemNames, item.Name)
     end
 
-    local dropdown = Options and Options.ItemTeleportDropdown
-    if dropdown then
-        dropdown:SetValues(itemNames)
+    if itemDropdown then
+        itemDropdown:SetValues(itemNames)
+    else
+        warn("Dropdown not ready")
     end
 end
 
--- Dropdown to select an item
-Tabs.Items:AddDropdown("ItemTeleportDropdown", {
+-- Create dropdown and save the reference
+itemDropdown = Tabs.Items:AddDropdown("ItemTeleportDropdown", {
     Title = "Item Teleport",
     Description = "Select an item to teleport to",
     Values = {},
@@ -565,7 +671,7 @@ Tabs.Items:AddDropdown("ItemTeleportDropdown", {
     end
 })
 
--- Button to teleport to selected item
+-- Add teleport button
 Tabs.Items:AddButton({
     Title = "📦 Teleport to Item",
     Description = "Teleports you to the selected item from the list.",
@@ -580,9 +686,13 @@ Tabs.Items:AddButton({
                 local root = getRoot()
                 if root then
                     originalPosition = root.CFrame
+                    playTeleportEffect(root.Position)
                     local target = item:IsA("BasePart") and item or item:FindFirstChildWhichIsA("BasePart")
                     if target then
                         root.CFrame = target.CFrame + Vector3.new(0, 3, 0)
+                        playTeleportEffect(root.Position)
+                    else
+                        warn("No BasePart in selected item")
                     end
                 end
                 break
@@ -591,20 +701,22 @@ Tabs.Items:AddButton({
     end
 })
 
--- Return to original position
+-- Return button
 Tabs.Items:AddButton({
     Title = "↩ Return to Original Position",
     Description = "Teleport back to where you were before item teleport",
     Callback = function()
         local root = getRoot()
         if root and originalPosition then
+            playTeleportEffect(root.Position)
             root.CFrame = originalPosition
+            playTeleportEffect(root.Position)
             originalPosition = nil
         end
     end
 })
 
--- Manual refresh button
+-- Manual refresh
 Tabs.Items:AddButton({
     Title = "🔄 Refresh Item List",
     Description = "Manually refresh the list of items for teleportation.",
@@ -613,39 +725,185 @@ Tabs.Items:AddButton({
     end
 })
 
--- Auto refresh after a short delay to ensure dropdown is initialized
-task.delay(1, function()
+-- Automatic periodic refresh
+task.spawn(function()
     while true do
-        if Options and Options.ItemTeleportDropdown then
+        if itemDropdown then
             refreshItemDropdown()
         end
-        task.wait(2)
+        task.wait(3)
     end
 end)
 
+--==Players tab==--
+local infiniteJumpEnabled = false
+local noclip = false
 
+local function getHumanoid()
+    local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    return character:FindFirstChildOfClass("Humanoid")
+end
 
+-- Player Tab: WalkSpeed
+Tabs.Player:AddSlider("WalkSpeed", {
+    Title = "WalkSpeed",
+    Description = "Adjust your walking speed",
+    Min = 16,
+    Max = 200,
+    Default = 16,
+    Rounding = 0,
+    Callback = function(value)
+        local character = LocalPlayer.Character
+        if character then
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                humanoid.WalkSpeed = value
+            end
+        end
+    end
+})
 
+Tabs.Player:AddSlider("JumpPower", {
+    Title = "Jump Height",
+    Description = "Adjust your jump power.",
+    Min = 50,
+    Max = 200,
+    Default = 50,
+    Rounding = 0,
+    Callback = function(value)
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChildOfClass("Humanoid") then
+            char:FindFirstChildOfClass("Humanoid").JumpPower = value
+        end
+    end
+})
 
+Tabs.Player:AddToggle("InfiniteJump", {
+    Title = " Infinite Jump",
+    Description = "Jump endlessly, even in mid-air.",
+    Default = false,
+    Callback = function(value)
+        infiniteJumpEnabled = value
+    end
+})
 
+UserInputService.JumpRequest:Connect(function()
+    if infiniteJumpEnabled then
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChildOfClass("Humanoid") then
+            char:FindFirstChildOfClass("Humanoid"):ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+    end
+end)
 
+Tabs.Player:AddToggle("Noclip", {
+    Title = "Noclip",
+    Description = "Walk through walls and objects.",
+    Default = false,
+    Callback = function(value)
+        noclip = value
+    end
+})
 
+RunService.Stepped:Connect(function()
+    if noclip and LocalPlayer.Character then
+        for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
+            if part:IsA("BasePart") and part.CanCollide then
+                part.CanCollide = false
+            end
+        end
+    end
+end)
 
+Tabs.Player:AddToggle("UnlockCamera", {
+    Title = "Third-Person Camera",
+    Description = "Unlocks full third-person camera freedom.",
+    Default = false,
+    Callback = function(value)
+        if value then
+            LocalPlayer.CameraMaxZoomDistance = 1000
+        else
+            LocalPlayer.CameraMaxZoomDistance = 10
+        end
+    end
+})
 
+--==Settings tab==--
+-- Add Check for Updates button in Settings tab
+Tabs.Settings:AddButton({
+    Title = "🔄 Check for Updates",
+    Description = "Check if a newer version of the script is available",
+    Callback = function()
+        local currentVersion = _G.PiggyUI_Version or "Unknown"
+        local httpService = game:GetService("HttpService")
 
+        local success, latestVersionRaw = pcall(function()
+            return game:HttpGet("https://raw.githubusercontent.com/Sealient/Sealients-Roblox-Scripts/refs/heads/main/PiggyUI_Version.txt")
+        end)
 
+        if not success or not latestVersionRaw then
+            Window:Dialog({
+                Title = "Error",
+                Content = "Failed to check for updates. Please try again later.",
+                Buttons = { { Title = "OK", Callback = function() end } }
+            })
+            return
+        end
 
+        local latestVersion = latestVersionRaw:match("^%s*(.-)%s*$") -- trim whitespace
 
+        if latestVersion == currentVersion then
+            Window:Dialog({
+                Title = "Up to Date",
+                Content = "You are running the latest version (" .. currentVersion .. ").",
+                Buttons = { { Title = "OK", Callback = function() end } }
+            })
+            return
+        end
 
+        -- Prompt user for update
+        Window:Dialog({
+            Title = "Update Available",
+            Content = ("Current: %s\nLatest: %s\nDo you want to update now?"):format(currentVersion, latestVersion),
+            Buttons = {
+                {
+                    Title = "Update",
+                    Callback = function()
+                        -- Cleanup your UI and resources here if necessary
+                        local coreGui = game:GetService("CoreGui")
 
+                        -- Remove your info UI if exists
+                        local infoUI = coreGui:FindFirstChild("PiggyUI_Info")
+                        if infoUI then infoUI:Destroy() end
 
+                        -- Destroy main window if needed
+                        if Window and typeof(Window.Destroy) == "function" then
+                            Window:Destroy()
+                        end
 
+                        -- Load updated script
+                        local loadSuccess, loadErr = pcall(function()
+                            loadstring(game:HttpGet("https://raw.githubusercontent.com/Sealient/Sealients-Roblox-Scripts/refs/heads/main/PiggyUI.lua"))()
+                        end)
 
-
-
-
-
-
+                        if not loadSuccess then
+                            warn("Failed to load updated Piggy script:", loadErr)
+                            Window:Dialog({
+                                Title = "Update Failed",
+                                Content = "Unable to load the new version. Please try again later.",
+                                Buttons = { { Title = "OK", Callback = function() end } }
+                            })
+                        end
+                    end,
+                },
+                {
+                    Title = "Cancel",
+                    Callback = function() end
+                }
+            }
+        })
+    end
+})
 local Options = Fluent.Options
 
 -- Set up SaveManager and InterfaceManager
@@ -669,4 +927,3 @@ Fluent:Notify({
 })
 
 SaveManager:LoadAutoloadConfig()
-
