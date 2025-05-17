@@ -6,8 +6,6 @@ local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
 local currentVersion = "1.0.0"  -- Your current script version
-local updateUrl = "https://raw.githubusercontent.com/yourusername/yourrepo/main/yourScript.lua" -- Replace with your raw script URL
-local versionUrl = "https://raw.githubusercontent.com/yourusername/yourrepo/main/version.txt" -- URL pointing to a small file containing just the version string
 _G.PiggyUI_Version = "v1.0.0"
 _G.PiggyUI_Version = _G.PiggyUI_Version or "Broken Version, Might Not Be The Creators Version."
 
@@ -829,81 +827,120 @@ Tabs.Player:AddToggle("UnlockCamera", {
 })
 
 --==Settings tab==--
--- Add Check for Updates button in Settings tab
 Tabs.Settings:AddButton({
-    Title = "🔄 Check for Updates",
-    Description = "Check if a newer version of the script is available",
+    Title = "Check for Updates",
+    Description = "Check if a new version of the UI is available.",
     Callback = function()
         local currentVersion = _G.PiggyUI_Version or "Unknown"
-        local httpService = game:GetService("HttpService")
+        local versionUrl = "https://raw.githubusercontent.com/Sealient/Sealients-Roblox-Scripts/main/Piggy/Sealient's%20Piggy%20Ui%20Version.lua"
+        local scriptUrl = "https://raw.githubusercontent.com/Sealient/Sealients-Roblox-Scripts/main/Piggy/Sealient's%20Piggy%20UI.lua"
 
-        local success, latestVersionRaw = pcall(function()
-            return game:HttpGet("https://raw.githubusercontent.com/Sealient/Sealients-Roblox-Scripts/refs/heads/main/PiggyUI_Version.txt")
+        local success, response = pcall(function()
+            return game:HttpGet(versionUrl)
         end)
 
-        if not success or not latestVersionRaw then
+        if not success then
             Window:Dialog({
                 Title = "Error",
-                Content = "Failed to check for updates. Please try again later.",
-                Buttons = { { Title = "OK", Callback = function() end } }
+                Content = "Could not fetch version info.\nCheck your internet connection or the URL.",
+                Buttons = {{ Title = "OK" }}
             })
             return
         end
 
-        local latestVersion = latestVersionRaw:match("^%s*(.-)%s*$") -- trim whitespace
+        local latestVersion = response:match('%b""') or response:match("return%s+['\"](.-)['\"]")
+        if latestVersion then latestVersion = latestVersion:gsub('"', '') end
+
+        if not latestVersion or latestVersion == "" then
+            Window:Dialog({
+                Title = "Error",
+                Content = "Failed to parse the latest version from server.",
+                Buttons = {{ Title = "OK" }}
+            })
+            return
+        end
 
         if latestVersion == currentVersion then
             Window:Dialog({
                 Title = "Up to Date",
-                Content = "You are running the latest version (" .. currentVersion .. ").",
-                Buttons = { { Title = "OK", Callback = function() end } }
+                Content = "You're already on the latest version.\nVersion: " .. currentVersion,
+                Buttons = {{ Title = "Cool" }}
             })
-            return
-        end
+        else
+            Window:Dialog({
+                Title = "Update Available",
+                Content = string.format("Current: %s\nLatest: %s\nUpdate now?", currentVersion, latestVersion),
+                Buttons = {
+                    {
+                        Title = "Update",
+                        Callback = function()
+                            -- Destroy top-right info UI
+                            local info = game:GetService("CoreGui"):FindFirstChild("SealientUI_Info")
+                            if info then
+                                info:Destroy()
+                            end
 
-        -- Prompt user for update
-        Window:Dialog({
-            Title = "Update Available",
-            Content = ("Current: %s\nLatest: %s\nDo you want to update now?"):format(currentVersion, latestVersion),
-            Buttons = {
-                {
-                    Title = "Update",
-                    Callback = function()
-                        -- Cleanup your UI and resources here if necessary
-                        local coreGui = game:GetService("CoreGui")
+                            -- Remove all ESPs
+                            if itemESPInstances then
+                                for _, esp in pairs(itemESPInstances) do
+                                    if typeof(esp) == "Instance" then
+                                        esp:Destroy()
+                                    end
+                                end
+                                itemESPInstances = {}
+                            end
 
-                        -- Remove your info UI if exists
-                        local infoUI = coreGui:FindFirstChild("PiggyUI_Info")
-                        if infoUI then infoUI:Destroy() end
+                            if itemRenderConnections then
+                                for _, conn in pairs(itemRenderConnections) do
+                                    if typeof(conn) == "RBXScriptConnection" then
+                                        conn:Disconnect()
+                                    end
+                                end
+                                itemRenderConnections = {}
+                            end
 
-                        -- Destroy main window if needed
-                        if Window and typeof(Window.Destroy) == "function" then
-                            Window:Destroy()
+                            if employeeESPInstances then
+                                for _, esp in pairs(employeeESPInstances) do
+                                    if typeof(esp) == "Instance" then
+                                        esp:Destroy()
+                                    end
+                                end
+                                employeeESPInstances = {}
+                            end
+
+                            if employeeRenderConnections then
+                                for _, conn in pairs(employeeRenderConnections) do
+                                    if typeof(conn) == "RBXScriptConnection" then
+                                        conn:Disconnect()
+                                    end
+                                end
+                                employeeRenderConnections = {}
+                            end
+
+                            -- Destroy the UI Window
+                            if Window and typeof(Window.Destroy) == "function" then
+                                Window:Destroy()
+                            end
+
+                            -- Load updated script
+                            local loadSuccess, loadErr = pcall(function()
+                                loadstring(game:HttpGet(scriptUrl))()
+                            end)
+
+                            if not loadSuccess then
+                                warn("[Update Error] Failed to load updated script:", loadErr)
+                            end
                         end
-
-                        -- Load updated script
-                        local loadSuccess, loadErr = pcall(function()
-                            loadstring(game:HttpGet("https://raw.githubusercontent.com/Sealient/Sealients-Roblox-Scripts/refs/heads/main/PiggyUI.lua"))()
-                        end)
-
-                        if not loadSuccess then
-                            warn("Failed to load updated Piggy script:", loadErr)
-                            Window:Dialog({
-                                Title = "Update Failed",
-                                Content = "Unable to load the new version. Please try again later.",
-                                Buttons = { { Title = "OK", Callback = function() end } }
-                            })
-                        end
-                    end,
-                },
-                {
-                    Title = "Cancel",
-                    Callback = function() end
+                    },
+                    {
+                        Title = "Cancel"
+                    }
                 }
-            }
-        })
+            })
+        end
     end
 })
+
 local Options = Fluent.Options
 
 -- Set up SaveManager and InterfaceManager
@@ -927,3 +964,4 @@ Fluent:Notify({
 })
 
 SaveManager:LoadAutoloadConfig()
+
